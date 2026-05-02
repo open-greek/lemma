@@ -154,8 +154,7 @@ This cross-references the two data sources, uses corpus frequency as a tiebreake
 ### Related Projects
 
 - [Kindling](https://github.com/ciscoriordan/kindling) - MOBI generator for Kindle dictionaries, books, and comics.
-- [Dilemma](https://github.com/ciscoriordan/dilemma) - Greek lemmatizer. Provides the inflection lookup tables used by Lemma.
-- [Morphy](https://github.com/ciscoriordan/morphy) - Greek POS tagger and dependency parser, built on Dilemma for lemmatization.
+- [Dilemma](https://github.com/ciscoriordan/dilemma) - Greek lemmatizer (provides the inflection lookup tables used by Lemma) plus a POS tagger and dependency parser via `dilemma[tagger]`.
 
 ## Dictionary Content
 
