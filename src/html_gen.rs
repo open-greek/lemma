@@ -601,7 +601,7 @@ impl<'a> HtmlGenerator<'a> {
                         let stripped = strip_transliterations(trimmed);
                         let cleaned = clean_etymology(&stripped);
                         if !cleaned.is_empty() {
-                            write!(out, "  <div class='etym'>Etymology: {}</div>\n", escape_html(&cleaned))?;
+                            write!(out, "  <div class='etym'><b>Etymology:</b> {}</div>\n", escape_html(&cleaned))?;
                         }
                     }
                 }
