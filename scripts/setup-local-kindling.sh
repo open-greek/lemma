@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # setup-local-kindling.sh
-# Writes .cargo/config.toml so cargo patches the crates.io kindling
-# dependency with a local checkout. Required until kindling is published
-# to crates.io.
+# Writes .cargo/config.toml so cargo patches the crates.io kindling-mobi
+# dependency with a local checkout. Useful for testing local kindling
+# changes against lemma without publishing.
 #
 # Honors $KINDLING_PATH; otherwise tries a few sensible defaults.
 #
@@ -42,7 +42,7 @@ abs_candidate="$(cd "$candidate" && pwd)"
 mkdir -p "$config_dir"
 
 desired="[patch.crates-io]
-kindling = { path = \"$abs_candidate\" }
+kindling-mobi = { path = \"$abs_candidate\" }
 "
 
 if [ -f "$config_file" ]; then

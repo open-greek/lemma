@@ -24,7 +24,7 @@ regex = "1"
 quick-xml = "0.36"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 httpdate = "1"
-kindling = "0.12"
+kindling = { version = "0.14", package = "kindling-mobi" }
 
 [profile.release]
 opt-level = 3

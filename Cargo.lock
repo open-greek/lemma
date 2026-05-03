@@ -104,7 +104,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -115,7 +115,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1242,12 +1242,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "kindling"
-version = "0.12.0"
+name = "kindling-mobi"
+version = "0.14.5"
 dependencies = [
  "clap",
  "image",
  "lightningcss",
+ "memchr",
  "quick-xml",
  "rayon",
  "regex",
@@ -1275,7 +1276,7 @@ dependencies = [
  "clap",
  "flate2",
  "httpdate",
- "kindling",
+ "kindling-mobi",
  "quick-xml",
  "rayon",
  "regex",
@@ -2408,7 +2409,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
