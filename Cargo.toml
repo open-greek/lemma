@@ -1,6 +1,6 @@
 [package]
 name = "lemma"
-version = "1.2.3"
+version = "1.2.4"
 edition = "2024"
 description = "Greek-English Kindle dictionary generator"
 
