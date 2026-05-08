@@ -24,6 +24,13 @@ struct Cli {
     #[arg(short = 'm', long = "mobi", default_value_t = false)]
     mobi: bool,
 
+    /// Also generate a StarDict bundle (.ifo/.idx/.dict/.syn directory plus a
+    /// matching .zip in dist/) for use with GoldenDict, GoldenDict-ng,
+    /// KOReader, sdcv, and other non-Kindle readers. The short flag is
+    /// `-s` for `--source` (collision-free), so use the long form here.
+    #[arg(long = "stardict", default_value_t = false)]
+    stardict: bool,
+
     /// Path to a JSON file that overrides front-matter fields.
     #[arg(long = "front-matter", value_name = "PATH")]
     front_matter: Option<PathBuf>,
@@ -48,6 +55,7 @@ fn main() {
         source_lang: cli.source,
         limit_percent: cli.limit,
         generate_mobi: cli.mobi,
+        generate_stardict: cli.stardict,
         max_inflections: cli.inflections,
         front_matter_path: cli.front_matter,
     };

@@ -7,6 +7,7 @@ use crate::epub::EpubGenerator;
 use crate::front_matter::{self, FrontMatter};
 use crate::html_gen::{BuildParams, HtmlGenerator};
 use crate::mobi::MobiGenerator;
+use crate::stardict::StarDictGenerator;
 use crate::version::LEMMA_VERSION;
 use chrono::Local;
 use std::path::PathBuf;
@@ -15,6 +16,7 @@ pub struct GeneratorOptions {
     pub source_lang: String,
     pub limit_percent: Option<f64>,
     pub generate_mobi: bool,
+    pub generate_stardict: bool,
     pub max_inflections: Option<usize>,
     pub front_matter_path: Option<PathBuf>,
 }
@@ -97,14 +99,30 @@ pub fn run(opts: GeneratorOptions) -> Result<(), Box<dyn std::error::Error>> {
     };
     epub.generate()?;
 
-    if opts.generate_mobi {
+    // The MOBI build is the memory-heavy step (kindling holds the full
+    // entry index in RAM); StarDict is much lighter, so the order here
+    // does not matter much for peak memory. Free dilemma once we are
+    // done with HTML generation regardless.
+    if opts.generate_mobi || opts.generate_stardict {
         drop(dilemma); // free memory
+    }
+
+    if opts.generate_mobi {
         let mobi = MobiGenerator {
             output_dir: &output_dir,
             source_lang: &opts.source_lang,
             opf_filename: &opf_filename,
         };
         mobi.generate();
+    }
+
+    if opts.generate_stardict {
+        let stardict = StarDictGenerator {
+            output_dir: &output_dir,
+            source_lang: &opts.source_lang,
+            opf_filename: &opf_filename,
+        };
+        stardict.generate();
     }
 
     println!("\nDictionary generation complete!");
