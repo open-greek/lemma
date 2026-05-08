@@ -13,6 +13,9 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+const LEMMA_REPO_URL: &str = "https://github.com/ciscoriordan/lemma";
+const LEMMA_CONTACT_EMAIL: &str = "cisco.riordan@gmail.com";
+
 pub struct StarDictGenerator<'a> {
     pub output_dir: &'a Path,
     pub source_lang: &'a str,
@@ -36,11 +39,13 @@ impl<'a> StarDictGenerator<'a> {
 
         println!("Running kindling stardict on {}", self.opf_filename);
 
-        let result = kindling::stardict::build_stardict(
-            &opf_path,
-            &bundle_dir,
-            &kindling::stardict::StarDictOptions::default(),
-        );
+        let options = kindling::stardict::StarDictOptions {
+            website: Some(LEMMA_REPO_URL.to_string()),
+            email: Some(LEMMA_CONTACT_EMAIL.to_string()),
+            description: Some(stardict_description(self.source_lang)),
+            ..Default::default()
+        };
+        let result = kindling::stardict::build_stardict(&opf_path, &bundle_dir, &options);
 
         match result {
             Ok(report) => {
@@ -128,4 +133,41 @@ fn write_bundle_zip(
 
     zip.finish()?;
     Ok(())
+}
+
+/// StarDict 2.4.2 has no `license` field, so license info is folded into
+/// `description`. KOReader and GoldenDict show this in the dictionary's info
+/// panel. `<br>` is the spec's line-break sequence.
+fn stardict_description(source_lang: &str) -> String {
+    let (gloss_lang, source_wiktionary) = match source_lang {
+        "el" => ("Greek", "Greek Wiktionary (el.wiktionary.org)"),
+        _ => ("English", "English Wiktionary (en.wiktionary.org)"),
+    };
+    format!(
+        "Greek-{gloss} dictionary built from {src}, with full inflection \
+         lookup via .syn redirects.<br>\
+         License: CC-BY-SA 4.0 (inherited from Wiktionary).<br>\
+         Generator: kindling (https://github.com/ciscoriordan/kindling, MIT).",
+        gloss = gloss_lang,
+        src = source_wiktionary,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn description_picks_english_wiktionary_for_en_source() {
+        let d = stardict_description("en");
+        assert!(d.contains("English Wiktionary"));
+        assert!(d.contains("CC-BY-SA 4.0"));
+        assert!(d.contains("github.com/ciscoriordan/kindling"));
+    }
+
+    #[test]
+    fn description_picks_greek_wiktionary_for_el_source() {
+        let d = stardict_description("el");
+        assert!(d.contains("Greek Wiktionary"));
+    }
 }
