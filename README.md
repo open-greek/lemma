@@ -40,17 +40,19 @@ Ready-to-use dictionary files are available on the [Releases page](https://githu
 
 - `lemma_greek_en.mobi` - the full dictionary for sideloading to Kindle devices
 - `lemma_greek_en.epub` - the source EPUB (most users want the MOBI)
-- `lemma_greek_en_stardict.zip` - StarDict bundle for [GoldenDict](https://github.com/xiaoyifang/goldendict-ng), [KOReader](https://koreader.rocks/), [sdcv](https://dushistov.github.io/sdcv/), and other non-Kindle dictionary readers (Kobo, reMarkable, Boox, desktop)
+- `lemma_greek_en_stardict_v<version>.zip` - StarDict bundle for [GoldenDict](https://github.com/xiaoyifang/goldendict-ng), [KOReader](https://koreader.rocks/), [sdcv](https://dushistov.github.io/sdcv/), and other non-Kindle dictionary readers (Kobo, reMarkable, Boox, desktop). The version suffix is intentional, see the install note below.
 
 Filenames are stable across versions, so each new release replaces the previous file in `documents/dictionaries/` on your Kindle in place. Check the **Build Info** section on the dictionary's copyright page to see which build you have installed (lemma generator version, build date, and Wiktionary extraction date).
 
 ### Installing the StarDict bundle
 
-For non-Kindle readers, download `lemma_greek_en_stardict.zip` from the Releases page and unzip it. The archive contains a single `lemma_greek_en_stardict/` directory with four files (`.ifo`, `.idx`, `.dict`, `.syn`) — drop that whole directory into your reader's dictionary path:
+For non-Kindle readers, download the latest `lemma_greek_en_stardict_v<version>.zip` from the Releases page and unzip it. The archive contains a single `lemma_greek_en_stardict_v<version>/` directory with four files (`.ifo`, `.idx`, `.dict`, `.syn`). Drop that whole directory into your reader's dictionary path:
 
 - **KOReader** (Kobo, reMarkable, Boox, jailbroken Kindle): `koreader/data/dict/`
-- **GoldenDict-ng** (desktop): add the unzipped directory under *Edit → Dictionaries → Sources → Files*
+- **GoldenDict-ng** (desktop): add the unzipped directory under *Edit, Dictionaries, Sources, Files*
 - **sdcv** (terminal): `~/.stardict/dic/`
+
+If you previously installed an older version, remove the old `lemma_greek_en_stardict_v*` directory first. The version suffix is part of the directory name because GoldenDict-ng on Linux otherwise keeps a stale copy of the metadata in its index cache (see [xiaoyifang/goldendict-ng#2829](https://github.com/xiaoyifang/goldendict-ng/issues/2829)); a fresh stem on each release sidesteps that bug.
 
 Inflection lookup, headword search, and cross-entry links (rewritten to StarDict's `bword://` scheme) all work out of the box.
 
@@ -119,7 +121,7 @@ cargo run --release -- -l 10
 
 - `-l, --limit PERCENT`: Limit to first X% of words (useful for testing)
 - `-m, --mobi`: Also generate `.mobi` via Kindling (for sideloading)
-- `--stardict`: Also generate a StarDict bundle (`<output>/lemma_greek_en_stardict/` plus a matching `dist/lemma_greek_en_stardict.zip`) for GoldenDict, GoldenDict-ng, KOReader, sdcv, and other non-Kindle readers
+- `--stardict`: Also generate a StarDict bundle (`<output>/lemma_greek_en_stardict_v<version>/` plus a matching `dist/lemma_greek_en_stardict_v<version>.zip`) for GoldenDict, GoldenDict-ng, KOReader, sdcv, and other non-Kindle readers. The version suffix forces GoldenDict-ng's path-keyed metadata cache to invalidate on each release. Full builds (without `--limit`) refuse to write a bundle below 1000 headwords as a safeguard against shipping a partial test build by accident.
 - `-i, --inflections N`: Max inflections per headword (default: 255)
 - `--front-matter PATH`: Override the copyright/usage front-matter fields (edition name, tagline, features, copyright holder, extra copyright lines, data sources) from a JSON file. Unspecified fields fall through to the built-in defaults.
 - `-h, --help`: Show help message

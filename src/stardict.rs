@@ -16,10 +16,18 @@ use std::path::{Path, PathBuf};
 const LEMMA_REPO_URL: &str = "https://github.com/ciscoriordan/lemma";
 const LEMMA_CONTACT_EMAIL: &str = "cisco.riordan@gmail.com";
 
+/// Minimum headword count for a build that did not pass `--limit`. Prevents
+/// shipping a partial test build by accident (lemma v1.3.0 was tagged with a
+/// 393-entry 0.5pct build).
+const MIN_FULL_WORDCOUNT: usize = 1000;
+
 pub struct StarDictGenerator<'a> {
     pub output_dir: &'a Path,
     pub source_lang: &'a str,
     pub opf_filename: &'a str,
+    /// False when `--limit` was passed. The wordcount sanity guard only
+    /// trips on full builds; partial builds are expected to be small.
+    pub is_full_build: bool,
 }
 
 impl<'a> StarDictGenerator<'a> {
@@ -27,9 +35,13 @@ impl<'a> StarDictGenerator<'a> {
         println!("\nGenerating StarDict bundle...");
 
         let opf_path = self.output_dir.join(self.opf_filename);
-        // The bundle directory's stem becomes the file stem inside it, so
-        // <output_dir>/<stem>/<stem>.ifo, .idx, .dict, .syn.
-        let stem = self.opf_filename.replace(".opf", "_stardict");
+        // Encode the lemma version into the bundle stem so GoldenDict-ng's
+        // path-keyed metadata cache is forced to invalidate on every release.
+        // Without this, Linux GoldenDict-ng keeps reading the metadata of
+        // whichever lemma release the user installed first
+        // (xiaoyifang/goldendict-ng#2829). This is the documented exception
+        // to lemma's "no versions in filenames" rule.
+        let stem = stardict_stem(self.opf_filename);
         let bundle_dir = self.output_dir.join(&stem);
 
         if bundle_dir.exists() {
@@ -49,6 +61,17 @@ impl<'a> StarDictGenerator<'a> {
 
         match result {
             Ok(report) => {
+                if self.is_full_build && report.wordcount < MIN_FULL_WORDCOUNT {
+                    eprintln!(
+                        "\nERROR: Refusing to publish StarDict bundle: only {} headwords. \
+                         Full builds should produce >= {} entries; this guard prevents \
+                         re-shipping a partial test build by mistake. Re-run with --limit \
+                         if a partial build was intended.",
+                        report.wordcount, MIN_FULL_WORDCOUNT
+                    );
+                    let _ = fs::remove_dir_all(&bundle_dir);
+                    return;
+                }
                 println!(
                     "\nSuccess! Generated StarDict bundle: {}/ ({} headwords, {} inflection redirects)",
                     stem, report.wordcount, report.synwordcount
@@ -135,6 +158,13 @@ fn write_bundle_zip(
     Ok(())
 }
 
+/// Build the bundle stem from the OPF filename plus the lemma version.
+/// See the comment in `generate` for why the version is part of the stem.
+fn stardict_stem(opf_filename: &str) -> String {
+    let base = opf_filename.replace(".opf", "_stardict");
+    format!("{}_v{}", base, env!("CARGO_PKG_VERSION"))
+}
+
 /// StarDict 2.4.2 has no `license` field, so license info is folded into
 /// `description`. KOReader and GoldenDict show this in the dictionary's info
 /// panel. `<br>` is the spec's line-break sequence.
@@ -169,5 +199,13 @@ mod tests {
     fn description_picks_greek_wiktionary_for_el_source() {
         let d = stardict_description("el");
         assert!(d.contains("Greek Wiktionary"));
+    }
+
+    #[test]
+    fn stem_appends_cargo_version_for_cache_busting() {
+        let s = stardict_stem("lemma_greek_en.opf");
+        assert!(s.starts_with("lemma_greek_en_stardict_v"));
+        assert!(s.contains(env!("CARGO_PKG_VERSION")));
+        assert!(!s.contains(".opf"));
     }
 }

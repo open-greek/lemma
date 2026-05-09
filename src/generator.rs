@@ -121,6 +121,7 @@ pub fn run(opts: GeneratorOptions) -> Result<(), Box<dyn std::error::Error>> {
             output_dir: &output_dir,
             source_lang: &opts.source_lang,
             opf_filename: &opf_filename,
+            is_full_build: opts.limit_percent.is_none(),
         };
         stardict.generate();
     }
