@@ -73,30 +73,23 @@ Inflection lookup, headword search, and cross-entry links (rewritten to StarDict
 ### Prerequisites
 
 - Rust 1.80+ (edition 2024)
-- A local checkout of [Kindling](https://github.com/ciscoriordan/kindling), since it is not yet published to crates.io. This is required to build lemma itself - lemma uses Kindling as a library for MOBI generation, and the MOBI step is now always invoked via the library (there is no shell-out to `kindling-cli`).
+- [Kindling](https://github.com/ciscoriordan/kindling) (the `kindling-mobi` crate) is pulled automatically from crates.io as a normal dependency; no local checkout is needed. lemma uses Kindling as a library for MOBI generation, and the MOBI step is always invoked via the library (there is no shell-out to `kindling-cli`).
 - Works on macOS, Linux, and Windows
 
 ### Installation
 
 ```bash
-# Clone both repos side by side
 git clone https://github.com/ciscoriordan/lemma.git
-git clone https://github.com/ciscoriordan/kindling.git
 cd lemma
 
-# Wire up the local kindling checkout. This writes a gitignored
-# .cargo/config.toml that patches crates.io for you.
-./scripts/setup-local-kindling.sh
-# (or set KINDLING_PATH=/path/to/kindling before running it)
-
-# Release build
+# Release build (kindling-mobi is fetched from crates.io automatically)
 cargo build --release
 
 # Run the generator (produces EPUB by default)
 ./target/release/lemma [options]
 ```
 
-Once Kindling is published to crates.io, `./scripts/setup-local-kindling.sh` becomes optional: the `kindling = "0.9"` line in `Cargo.toml` will resolve directly.
+To build against a local Kindling checkout instead of the published crate (for testing unreleased Kindling changes), run `./scripts/setup-local-kindling.sh` first. It writes a gitignored `.cargo/config.toml` that patches the `kindling-mobi` crates.io dependency to your local path; delete that file to go back to the published crate.
 
 ### Options
 
