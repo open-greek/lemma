@@ -84,7 +84,6 @@ pub fn run(opts: GeneratorOptions) -> Result<(), Box<dyn std::error::Error>> {
         limit_percent: opts.limit_percent,
         max_inflections: opts.max_inflections,
         front_matter,
-        generate_epub3: opts.generate_epub3,
     };
 
     let mut html_gen = HtmlGenerator::new(entries, params, Some(&dilemma));

@@ -1243,11 +1243,12 @@ dependencies = [
 
 [[package]]
 name = "kindling-mobi"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4eca910415d93f8307f04f8c39ea0a362af54d7a6f6f156979acecec1a61d98"
+checksum = "e4773c0aeedd737b281db7c3d485b4ea55f5cc3f6b1091b7185cd115ca6f50d3"
 dependencies = [
  "clap",
+ "ego-tree",
  "image",
  "lightningcss",
  "memchr",
@@ -3283,7 +3284,3 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
-
-[[patch.unused]]
-name = "kindling-mobi"
-version = "0.18.3"

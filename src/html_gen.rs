@@ -17,13 +17,6 @@ use std::sync::OnceLock;
 pub const MAX_INFLECTIONS: usize = 255;
 pub const MAX_POLYTONIC: usize = 255;
 
-// EPUB3 dictionary metadata constants. The dc:identifier and dcterms:modified
-// are fixed strings (no Date::now) so builds are reproducible and carry no
-// date in any identifier; the timestamp here is content metadata only, never a
-// filename. Stable per edition so KDP treats new uploads as in-place updates.
-const EPUB3_UUID: &str = "urn:uuid:6c5f0a2e-7b41-4d8a-9e33-1ee33aabb742";
-const EPUB3_MODIFIED: &str = "2026-06-20T00:00:00Z";
-
 fn pos_map() -> &'static HashMap<&'static str, &'static str> {
     static M: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     M.get_or_init(|| {
@@ -120,10 +113,6 @@ pub struct BuildParams {
     pub limit_percent: Option<f64>,
     pub max_inflections: Option<usize>,
     pub front_matter: Value,
-    /// Emit an EPUB3 dictionary (content_NN.xhtml + skm.xml + nav.xhtml +
-    /// content3.opf) alongside the idx content files, for KDP's modern
-    /// converter. Does not affect the idx/MOBI output.
-    pub generate_epub3: bool,
 }
 
 pub struct HtmlGenerator<'a> {
@@ -194,9 +183,6 @@ impl<'a> HtmlGenerator<'a> {
         self.create_usage_html()?;
         self.create_opf_file()?;
         self.create_toc_ncx()?;
-        if self.params.generate_epub3 {
-            self.create_epub3_files()?;
-        }
         Ok(())
     }
 
@@ -710,20 +696,6 @@ impl<'a> HtmlGenerator<'a> {
         Ok(())
     }
 
-    /// Render a single entry as an EPUB3 `<article epub:type="dictentry">`,
-    /// reusing the shared body renderer with xhtml cross-reference links.
-    fn write_entry_xhtml<W: Write>(&self, out: &mut W, word: &str, entries: &[Entry]) -> std::io::Result<()> {
-        let escaped_word = escape_html(word);
-        let anchor = sanitize_anchor_id(&escaped_word);
-        write!(out,
-            "<article epub:type=\"dictentry\" id=\"hw_{}\"><dfn>{}</dfn>\n",
-            anchor, escaped_word
-        )?;
-        self.write_entry_body(out, word, entries, "xhtml")?;
-        out.write_all(b"</article>\n")?;
-        Ok(())
-    }
-
     fn rank_inflections(&self, forms: &[String]) -> Vec<String> {
         let mut tier1: Vec<(String, i64)> = Vec::new();
         let mut tier2: Vec<(String, i64)> = Vec::new();
@@ -1175,180 +1147,6 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
         f.write_all(content.as_bytes())?;
         Ok(())
     }
-
-    /// Emit the EPUB3 dictionary artifacts alongside the idx content files:
-    /// per-bucket `content_NN.xhtml`, a single `skm.xml` Search Key Map,
-    /// `nav.xhtml`, and `content3.opf`. The idx `.html` files and OPF are
-    /// untouched; the EPUB3 zip step picks up these files when `--epub3` is set.
-    fn create_epub3_files(&self) -> std::io::Result<()> {
-        println!("Creating EPUB3 dictionary files...");
-
-        // Re-sort keys with the same ordering used by create_content_html so
-        // the SKM groups and content files appear in dictionary order.
-        let mut sorted_keys: Vec<String> = self.entries.keys().cloned().collect();
-        sorted_keys.sort_by_cached_key(|k| normalize_for_sorting(k));
-
-        // Group keys by their content-file bucket (already assigned in
-        // create_content_html), preserving sorted order within each bucket.
-        let mut by_bucket: HashMap<u8, Vec<&String>> = HashMap::new();
-        for k in &sorted_keys {
-            let b = self.headword_buckets.get(k).copied().unwrap_or(0);
-            by_bucket.entry(b).or_default().push(k);
-        }
-        let mut buckets: Vec<u8> = by_bucket.keys().copied().collect();
-        buckets.sort();
-
-        // Per-bucket content_NN.xhtml files.
-        for &b in &buckets {
-            let label = self
-                .file_labels
-                .get(b as usize)
-                .cloned()
-                .unwrap_or_else(|| bucket_label(b).to_string());
-            let path = self.output_dir.join(bucket_filename_ext(b, "xhtml"));
-            let mut out = BufWriter::new(File::create(&path)?);
-            out.write_all(xhtml_content_header(&label).as_bytes())?;
-            for word in &by_bucket[&b] {
-                let entries = self.entries.get(*word).map(|v| v.as_slice()).unwrap_or(&[]);
-                self.write_entry_xhtml(&mut out, word, entries)?;
-            }
-            out.write_all(XHTML_CONTENT_FOOTER.as_bytes())?;
-            out.flush()?;
-        }
-
-        // Single Search Key Map for the whole dictionary. One group per
-        // headword, in dictionary order; each group lists the headword plus
-        // every inflected form returned by entry_variations (the same set the
-        // idx path emits as <idx:iform>).
-        {
-            let path = self.output_dir.join("skm.xml");
-            let mut out = BufWriter::new(File::create(&path)?);
-            out.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
-            out.write_all(b"<search-key-map xmlns=\"http://www.idpf.org/2007/ops\" xml:lang=\"el\">\n")?;
-            for word in &sorted_keys {
-                let b = self.headword_buckets.get(word).copied().unwrap_or(0);
-                let escaped_word = escape_html(word);
-                let anchor = sanitize_anchor_id(&escaped_word);
-                let href = format!("{}#hw_{}", bucket_filename_ext(b, "xhtml"), anchor);
-                write!(out, "  <search-key-group href=\"{}\">\n", href)?;
-                write!(out, "    <match value=\"{}\"/>\n", escaped_word)?;
-                let entries = self.entries.get(word).map(|v| v.as_slice()).unwrap_or(&[]);
-                let variations = self.entry_variations(word, entries);
-                for v in &variations {
-                    write!(out, "    <match value=\"{}\"/>\n", escape_html(v))?;
-                }
-                out.write_all(b"  </search-key-group>\n")?;
-            }
-            out.write_all(b"</search-key-map>\n")?;
-            out.flush()?;
-        }
-
-        // nav.xhtml: minimal EPUB3 toc listing the content files.
-        {
-            let nav_items = buckets
-                .iter()
-                .map(|&b| {
-                    let label = self
-                        .file_labels
-                        .get(b as usize)
-                        .cloned()
-                        .unwrap_or_else(|| bucket_label(b).to_string());
-                    format!(
-                        "      <li><a href=\"{href}\">{label}</a></li>",
-                        href = bucket_filename_ext(b, "xhtml"),
-                        label = escape_html(&label)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            let nav = format!(
-r#"<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
-<head>
-  <title>Contents</title>
-</head>
-<body>
-  <nav epub:type="toc" id="toc">
-    <h1>Contents</h1>
-    <ol>
-{nav_items}
-    </ol>
-  </nav>
-</body>
-</html>
-"#,
-                nav_items = nav_items
-            );
-            let mut f = File::create(self.output_dir.join("nav.xhtml"))?;
-            f.write_all(nav.as_bytes())?;
-        }
-
-        // content3.opf: the EPUB3 package document.
-        {
-            let display_title = self
-                .params
-                .front_matter
-                .get("edition_name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| self.default_edition_name());
-
-            let manifest_items = buckets
-                .iter()
-                .map(|&b| {
-                    format!(
-                        "    <item id=\"{id}\" href=\"{href}\" media-type=\"application/xhtml+xml\"/>",
-                        id = bucket_id(b),
-                        href = bucket_filename_ext(b, "xhtml")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            let spine_items = buckets
-                .iter()
-                .map(|&b| format!("    <itemref idref=\"{}\"/>", bucket_id(b)))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            let opf = format!(
-r#"<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xml:lang="en">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="bookid">{uuid}</dc:identifier>
-    <dc:title>{title}</dc:title>
-    <dc:language>el</dc:language>
-    <dc:language>en</dc:language>
-    <dc:type>dictionary</dc:type>
-    <meta property="dcterms:modified">{modified}</meta>
-    <meta property="source-language">el</meta>
-    <meta property="target-language">en</meta>
-  </metadata>
-  <manifest>
-    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-{manifest_items}
-    <item id="skm" href="skm.xml" media-type="application/vnd.epub.search-key-map+xml" properties="search-key-map dictionary"/>
-  </manifest>
-  <spine>
-{spine_items}
-  </spine>
-</package>
-"#,
-                uuid = EPUB3_UUID,
-                title = escape_html(&display_title),
-                modified = EPUB3_MODIFIED,
-                manifest_items = manifest_items,
-                spine_items = spine_items,
-            );
-            let mut f = File::create(self.output_dir.join("content3.opf"))?;
-            f.write_all(opf.as_bytes())?;
-        }
-
-        println!(
-            "  Wrote {} content_NN.xhtml + skm.xml + nav.xhtml + content3.opf",
-            buckets.len()
-        );
-        Ok(())
-    }
 }
 
 // --- Free helpers ---
@@ -1371,18 +1169,6 @@ fn html_header(title: &str) -> String {
 fn html_footer() -> &'static str {
     "    </mbp:frameset>\n  </body>\n</html>\n"
 }
-
-/// EPUB3 content-file header: a well-formed XHTML5 document with the XHTML and
-/// EPUB ops namespaces and `<body epub:type="dictionary">`. Unlike the idx
-/// `html_header`, this is strict XHTML so epubcheck's DICT profile accepts it.
-fn xhtml_content_header(title: &str) -> String {
-    format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"el\" lang=\"el\">\n<head><title>{}</title></head>\n<body epub:type=\"dictionary\">\n",
-        escape_html(title)
-    )
-}
-
-const XHTML_CONTENT_FOOTER: &str = "</body>\n</html>\n";
 
 fn sanitize_anchor_id(text: &str) -> String {
     text.replace(' ', "_")
