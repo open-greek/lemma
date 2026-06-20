@@ -17,6 +17,13 @@ use std::sync::OnceLock;
 pub const MAX_INFLECTIONS: usize = 255;
 pub const MAX_POLYTONIC: usize = 255;
 
+// EPUB3 dictionary metadata constants. The dc:identifier and dcterms:modified
+// are fixed strings (no Date::now) so builds are reproducible and carry no
+// date in any identifier; the timestamp here is content metadata only, never a
+// filename. Stable per edition so KDP treats new uploads as in-place updates.
+const EPUB3_UUID: &str = "urn:uuid:6c5f0a2e-7b41-4d8a-9e33-1ee33aabb742";
+const EPUB3_MODIFIED: &str = "2026-06-20T00:00:00Z";
+
 fn pos_map() -> &'static HashMap<&'static str, &'static str> {
     static M: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     M.get_or_init(|| {
@@ -113,6 +120,10 @@ pub struct BuildParams {
     pub limit_percent: Option<f64>,
     pub max_inflections: Option<usize>,
     pub front_matter: Value,
+    /// Emit an EPUB3 dictionary (content_NN.xhtml + skm.xml + nav.xhtml +
+    /// content3.opf) alongside the idx content files, for KDP's modern
+    /// converter. Does not affect the idx/MOBI output.
+    pub generate_epub3: bool,
 }
 
 pub struct HtmlGenerator<'a> {
@@ -126,8 +137,16 @@ pub struct HtmlGenerator<'a> {
     pub opf_filename: String,
     // Populated by create_content_html before any entry is rendered, so
     // linkify_definition can emit file-qualified cross-reference hrefs.
+    // headword_buckets maps each headword to its content-file index (0..N);
+    // large letters are split across several files, so this is a file index,
+    // not a letter index.
     headword_buckets: HashMap<String, u8>,
     buckets_used: Vec<u8>,
+    // Per-file display label (indexed by file index) and one TOC nav point per
+    // letter (file index of the letter's first file + its label), both built
+    // alongside headword_buckets.
+    file_labels: Vec<String>,
+    nav_points: Vec<(u8, String)>,
 }
 
 impl<'a> HtmlGenerator<'a> {
@@ -157,6 +176,8 @@ impl<'a> HtmlGenerator<'a> {
             opf_filename: String::new(),
             headword_buckets: HashMap::new(),
             buckets_used: Vec::new(),
+            file_labels: Vec::new(),
+            nav_points: Vec::new(),
         }
     }
 
@@ -173,6 +194,9 @@ impl<'a> HtmlGenerator<'a> {
         self.create_usage_html()?;
         self.create_opf_file()?;
         self.create_toc_ncx()?;
+        if self.params.generate_epub3 {
+            self.create_epub3_files()?;
+        }
         Ok(())
     }
 
@@ -186,45 +210,92 @@ impl<'a> HtmlGenerator<'a> {
         let mut sorted_keys: Vec<String> = self.entries.keys().cloned().collect();
         sorted_keys.sort_by_cached_key(|k| normalize_for_sorting(k));
 
-        // Populate the bucket map before rendering so linkify_definition can
-        // emit cross-reference hrefs that point at the correct content file.
-        self.headword_buckets = sorted_keys
-            .iter()
-            .map(|k| (k.clone(), bucket_for_headword(k)))
-            .collect();
+        // Assign every headword to a content file before rendering, so
+        // linkify_definition can emit cross-reference hrefs that point at the
+        // correct file. Each Greek letter (plus the non-Greek "misc" bucket)
+        // starts a fresh file, and any letter holding more than
+        // MAX_ENTRIES_PER_FILE entries is spread across several consecutive
+        // files. This keeps every file well under KDP's server-side converter
+        // limit (KPG §15.5) and satisfies §15.2's "each alphabet letter
+        // section should begin on a new page" as a side effect. Α is why this
+        // matters: the privative α-/αν- plus the ανα-/απο-/αντι- prefixes give
+        // it ~4.5x the headwords of any other letter, so as a single file it
+        // was ~19 MB and stalled the converter.
+        //
+        // Tunable: lower MAX_ENTRIES_PER_FILE if the converter still struggles.
+        // It only changes how content is chunked, never the per-entry markup,
+        // so the MOBI/kindling path is unaffected.
+        const MAX_ENTRIES_PER_FILE: usize = 2500;
 
-        // Render each entry in parallel, tagged with its bucket. Splitting the
-        // dictionary across multiple files keeps every file under KDP's
-        // server-side converter limit (KPG §15.5) and addresses §15.2's
-        // "each alphabet letter section should begin on a new page" as a
-        // side effect.
+        // Group headwords by letter bucket, preserving sorted order within each.
+        let mut by_letter: HashMap<u8, Vec<&String>> = HashMap::new();
+        for k in &sorted_keys {
+            by_letter.entry(bucket_for_headword(k)).or_default().push(k);
+        }
+        let mut letters: Vec<u8> = by_letter.keys().copied().collect();
+        letters.sort();
+
+        // Walk letters in alphabetical order, emitting one or more files per
+        // letter. Record the headword -> file-index map, a label per file (for
+        // the <title>), and one TOC nav point per letter (its first file) so
+        // the table of contents stays one entry per letter.
+        let mut headword_file: HashMap<String, u8> = HashMap::new();
+        let mut file_labels: Vec<String> = Vec::new();
+        let mut nav_points: Vec<(u8, String)> = Vec::new();
+        let mut file_idx: u8 = 0;
+        for letter in &letters {
+            let words = &by_letter[letter];
+            let label = bucket_label(*letter);
+            let nfiles = ((words.len() + MAX_ENTRIES_PER_FILE - 1) / MAX_ENTRIES_PER_FILE).max(1);
+            let per = (words.len() + nfiles - 1) / nfiles;
+            nav_points.push((file_idx, label.to_string()));
+            for (part, chunk) in words.chunks(per).enumerate() {
+                for w in chunk {
+                    headword_file.insert((*w).clone(), file_idx);
+                }
+                file_labels.push(if nfiles > 1 {
+                    format!("{} ({})", label, part + 1)
+                } else {
+                    label.to_string()
+                });
+                file_idx = file_idx
+                    .checked_add(1)
+                    .expect("content file count exceeds u8 range");
+            }
+        }
+
+        self.headword_buckets = headword_file;
+        self.file_labels = file_labels;
+        self.nav_points = nav_points;
+
+        // Render each entry in parallel, tagged with its content-file index.
         let rendered: Vec<(u8, Vec<u8>)> = sorted_keys
             .par_iter()
             .map(|word| {
                 let entries = self.entries.get(word).map(|v| v.as_slice()).unwrap_or(&[]);
                 let mut buf: Vec<u8> = Vec::with_capacity(512);
                 let _ = self.write_entry(&mut buf, word, entries);
-                let bucket = self.headword_buckets.get(word).copied().unwrap_or(0);
-                (bucket, buf)
+                let file = self.headword_buckets.get(word).copied().unwrap_or(0);
+                (file, buf)
             })
             .collect();
 
-        // Group by bucket while preserving the sort order within each bucket.
-        let mut per_bucket: HashMap<u8, Vec<Vec<u8>>> = HashMap::new();
-        for (bucket, buf) in rendered {
-            per_bucket.entry(bucket).or_default().push(buf);
+        // Group by file index while preserving the sort order within each file.
+        let mut per_file: HashMap<u8, Vec<Vec<u8>>> = HashMap::new();
+        for (file, buf) in rendered {
+            per_file.entry(file).or_default().push(buf);
         }
 
-        let mut buckets_used: Vec<u8> = per_bucket.keys().copied().collect();
-        buckets_used.sort();
-        self.buckets_used = buckets_used.clone();
+        let mut files_used: Vec<u8> = per_file.keys().copied().collect();
+        files_used.sort();
+        self.buckets_used = files_used.clone();
 
         let mut total_entries = 0usize;
-        for bucket in buckets_used {
-            let bufs = &per_bucket[&bucket];
-            let path = self.output_dir.join(bucket_filename(bucket));
+        for file in files_used {
+            let bufs = &per_file[&file];
+            let path = self.output_dir.join(bucket_filename(file));
             let mut out = BufWriter::new(File::create(&path)?);
-            out.write_all(html_header(bucket_label(bucket)).as_bytes())?;
+            out.write_all(html_header(&self.file_labels[file as usize]).as_bytes())?;
             for buf in bufs {
                 out.write_all(buf)?;
             }
@@ -233,8 +304,8 @@ impl<'a> HtmlGenerator<'a> {
             total_entries += bufs.len();
             println!(
                 "  Wrote {} ({}: {} entries)",
-                bucket_filename(bucket),
-                bucket_label(bucket),
+                bucket_filename(file),
+                self.file_labels[file as usize],
                 bufs.len()
             );
         }
@@ -388,7 +459,13 @@ impl<'a> HtmlGenerator<'a> {
         self.iform_owner = iform_owner;
     }
 
-    fn write_entry<W: Write>(&self, out: &mut W, word: &str, entries: &[Entry]) -> std::io::Result<()> {
+    /// Compute the full ordered set of searchable inflected forms for a
+    /// headword: ranked single-word inflections (capped at max_inflections),
+    /// de-duplicated against iforms owned by a higher-frequency headword, then
+    /// extended with polytonic variants. This is exactly the set emitted as
+    /// `<idx:iform>` by the idx path and as `<match>` entries by the EPUB3 SKM,
+    /// keeping the two outputs in agreement.
+    fn entry_variations(&self, word: &str, entries: &[Entry]) -> Vec<String> {
         let max_inflections = self.params.max_inflections.unwrap_or(MAX_INFLECTIONS);
 
         // Combine all inflections from all entries
@@ -454,6 +531,12 @@ impl<'a> HtmlGenerator<'a> {
             all_variations.extend(polytonic_forms);
         }
 
+        all_variations
+    }
+
+    fn write_entry<W: Write>(&self, out: &mut W, word: &str, entries: &[Entry]) -> std::io::Result<()> {
+        let all_variations = self.entry_variations(word, entries);
+
         let escaped_word = escape_html(word);
         let anchor = sanitize_anchor_id(&escaped_word);
         write!(out,
@@ -472,6 +555,18 @@ impl<'a> HtmlGenerator<'a> {
         out.write_all(b"    </idx:orth>\n")?;
         out.write_all(b"  </idx:short>\n")?;
 
+        self.write_entry_body(out, word, entries, "html")?;
+
+        out.write_all(b"</idx:entry>\n<hr/>\n")?;
+        Ok(())
+    }
+
+    /// Render the body of a single entry (POS groups, definitions, examples,
+    /// etymology) shared by the idx path and the EPUB3 path. `link_ext` selects
+    /// the file extension used for cross-reference hrefs ("html" for idx/MOBI,
+    /// "xhtml" for EPUB3). Calling with "html" reproduces the historical idx
+    /// body byte-for-byte.
+    fn write_entry_body<W: Write>(&self, out: &mut W, word: &str, entries: &[Entry], link_ext: &str) -> std::io::Result<()> {
         if self.params.source_lang == "el" {
             // Group by POS preserving insertion order
             let mut pos_order: Vec<String> = Vec::new();
@@ -519,9 +614,9 @@ impl<'a> HtmlGenerator<'a> {
                 for (def_idx, definition) in to_print.iter().enumerate() {
                     let clean = strip_def_qualifiers(definition);
                     if all_definitions.len() > 1 {
-                        write!(out, "  <div class='def'>{}. {}</div>\n", def_idx + 1, self.linkify_definition(&clean))?;
+                        write!(out, "  <div class='def'>{}. {}</div>\n", def_idx + 1, self.linkify_definition_ext(&clean, link_ext))?;
                     } else {
-                        write!(out, "  <div class='def'>{}</div>\n", self.linkify_definition(&clean))?;
+                        write!(out, "  <div class='def'>{}</div>\n", self.linkify_definition_ext(&clean, link_ext))?;
                     }
                     if let Some(ex) = all_examples.get(def_idx).and_then(|e| e.as_ref()) {
                         if !ex.text.is_empty() {
@@ -564,7 +659,7 @@ impl<'a> HtmlGenerator<'a> {
                 if defs.len() > 1 {
                     for (def_idx, definition) in defs.iter().enumerate() {
                         let clean = strip_def_qualifiers(definition);
-                        write!(out, "  <div class='def'>{}. {}</div>\n", def_idx + 1, self.linkify_definition(&clean))?;
+                        write!(out, "  <div class='def'>{}. {}</div>\n", def_idx + 1, self.linkify_definition_ext(&clean, link_ext))?;
                         if let Some(ex) = entry_examples.get(def_idx).and_then(|e| e.as_ref()) {
                             if !ex.text.is_empty() {
                                 let ex_text = format_example_text(ex);
@@ -580,7 +675,7 @@ impl<'a> HtmlGenerator<'a> {
                 } else {
                     for (def_idx, definition) in defs.iter().enumerate() {
                         let clean = strip_def_qualifiers(definition);
-                        write!(out, "  <div class='def'>{}</div>\n", self.linkify_definition(&clean))?;
+                        write!(out, "  <div class='def'>{}</div>\n", self.linkify_definition_ext(&clean, link_ext))?;
                         if let Some(ex) = entry_examples.get(def_idx).and_then(|e| e.as_ref()) {
                             if !ex.text.is_empty() {
                                 let ex_text = format_example_text(ex);
@@ -612,7 +707,20 @@ impl<'a> HtmlGenerator<'a> {
             }
         }
 
-        out.write_all(b"</idx:entry>\n<hr/>\n")?;
+        Ok(())
+    }
+
+    /// Render a single entry as an EPUB3 `<article epub:type="dictentry">`,
+    /// reusing the shared body renderer with xhtml cross-reference links.
+    fn write_entry_xhtml<W: Write>(&self, out: &mut W, word: &str, entries: &[Entry]) -> std::io::Result<()> {
+        let escaped_word = escape_html(word);
+        let anchor = sanitize_anchor_id(&escaped_word);
+        write!(out,
+            "<article epub:type=\"dictentry\" id=\"hw_{}\"><dfn>{}</dfn>\n",
+            anchor, escaped_word
+        )?;
+        self.write_entry_body(out, word, entries, "xhtml")?;
+        out.write_all(b"</article>\n")?;
         Ok(())
     }
 
@@ -699,7 +807,19 @@ impl<'a> HtmlGenerator<'a> {
         None
     }
 
+    // Thin wrapper kept for API stability / external callers; the idx body now
+    // calls linkify_definition_ext(.., "html") directly.
+    #[allow(dead_code)]
     fn linkify_definition(&self, text: &str) -> String {
+        // idx/MOBI path links into content_NN.html.
+        self.linkify_definition_ext(text, "html")
+    }
+
+    /// Cross-reference linkifier parameterised by the target file extension so
+    /// the same body markup can link into `.html` (idx/MOBI) or `.xhtml`
+    /// (EPUB3) content files. Calling with "html" reproduces the historical
+    /// idx output byte-for-byte.
+    fn linkify_definition_ext(&self, text: &str, link_ext: &str) -> String {
         let re = greek_word_re();
         let mut out = String::new();
         let mut last = 0;
@@ -715,7 +835,7 @@ impl<'a> HtmlGenerator<'a> {
                 // emitting-bucket through write_entry by qualifying every link.
                 out.push_str(&format!(
                     "<a href=\"{}#hw_{}\">{}</a>",
-                    bucket_filename(bucket),
+                    bucket_filename_ext(bucket, link_ext),
                     anchor,
                     escaped
                 ));
@@ -745,10 +865,11 @@ impl<'a> HtmlGenerator<'a> {
         } else {
             println!("  Warning: cover image not found at {}", cover_src.display());
         }
-        // Kindle renders the cover from the <item properties="coverimage"/>
-        // manifest entry, so no HTML cover page is emitted. KPG §4.2 / rule
-        // R4.2.4 explicitly warns against an HTML cover page in addition to
-        // the cover image.
+        // Kindle renders the cover from the <meta name="cover" content="cimage"/>
+        // metadata entry (the OPF 2.0 cover method; kindling falls back to it
+        // when no properties="coverimage" item is present), so no HTML cover
+        // page is emitted. KPG §4.2 / rule R4.2.4 explicitly warns against an
+        // HTML cover page in addition to the cover image.
         Ok(())
     }
 
@@ -954,8 +1075,7 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
           media-type="application/x-dtbncx+xml" />
     <item id="cimage"
           href="cover.jpg"
-          media-type="image/jpeg"
-          properties="coverimage" />
+          media-type="image/jpeg" />
     <item id="usage"
           href="usage.html"
           media-type="application/xhtml+xml" />
@@ -1001,20 +1121,21 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
             .map(|s| s.to_string())
             .unwrap_or_else(|| self.default_edition_name());
 
-        // Emit one navPoint per populated bucket so the Kindle TOC offers
-        // jump-to-letter navigation.
+        // Emit one navPoint per letter (pointing at that letter's first file)
+        // so the Kindle TOC offers jump-to-letter navigation even when a letter
+        // is split across several content files.
         let letter_navpoints = self
-            .buckets_used
+            .nav_points
             .iter()
             .enumerate()
-            .map(|(i, &b)| {
+            .map(|(i, (file_idx, label))| {
                 let play_order = 3 + i;
                 format!(
                     "    <navPoint id=\"{id}\" playOrder=\"{play_order}\">\n      <navLabel><text>{label}</text></navLabel>\n      <content src=\"{href}\"/>\n    </navPoint>",
-                    id = bucket_id(b),
+                    id = bucket_id(*file_idx),
                     play_order = play_order,
-                    label = bucket_label(b),
-                    href = bucket_filename(b)
+                    label = label,
+                    href = bucket_filename(*file_idx)
                 )
             })
             .collect::<Vec<_>>()
@@ -1054,6 +1175,180 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
         f.write_all(content.as_bytes())?;
         Ok(())
     }
+
+    /// Emit the EPUB3 dictionary artifacts alongside the idx content files:
+    /// per-bucket `content_NN.xhtml`, a single `skm.xml` Search Key Map,
+    /// `nav.xhtml`, and `content3.opf`. The idx `.html` files and OPF are
+    /// untouched; the EPUB3 zip step picks up these files when `--epub3` is set.
+    fn create_epub3_files(&self) -> std::io::Result<()> {
+        println!("Creating EPUB3 dictionary files...");
+
+        // Re-sort keys with the same ordering used by create_content_html so
+        // the SKM groups and content files appear in dictionary order.
+        let mut sorted_keys: Vec<String> = self.entries.keys().cloned().collect();
+        sorted_keys.sort_by_cached_key(|k| normalize_for_sorting(k));
+
+        // Group keys by their content-file bucket (already assigned in
+        // create_content_html), preserving sorted order within each bucket.
+        let mut by_bucket: HashMap<u8, Vec<&String>> = HashMap::new();
+        for k in &sorted_keys {
+            let b = self.headword_buckets.get(k).copied().unwrap_or(0);
+            by_bucket.entry(b).or_default().push(k);
+        }
+        let mut buckets: Vec<u8> = by_bucket.keys().copied().collect();
+        buckets.sort();
+
+        // Per-bucket content_NN.xhtml files.
+        for &b in &buckets {
+            let label = self
+                .file_labels
+                .get(b as usize)
+                .cloned()
+                .unwrap_or_else(|| bucket_label(b).to_string());
+            let path = self.output_dir.join(bucket_filename_ext(b, "xhtml"));
+            let mut out = BufWriter::new(File::create(&path)?);
+            out.write_all(xhtml_content_header(&label).as_bytes())?;
+            for word in &by_bucket[&b] {
+                let entries = self.entries.get(*word).map(|v| v.as_slice()).unwrap_or(&[]);
+                self.write_entry_xhtml(&mut out, word, entries)?;
+            }
+            out.write_all(XHTML_CONTENT_FOOTER.as_bytes())?;
+            out.flush()?;
+        }
+
+        // Single Search Key Map for the whole dictionary. One group per
+        // headword, in dictionary order; each group lists the headword plus
+        // every inflected form returned by entry_variations (the same set the
+        // idx path emits as <idx:iform>).
+        {
+            let path = self.output_dir.join("skm.xml");
+            let mut out = BufWriter::new(File::create(&path)?);
+            out.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
+            out.write_all(b"<search-key-map xmlns=\"http://www.idpf.org/2007/ops\" xml:lang=\"el\">\n")?;
+            for word in &sorted_keys {
+                let b = self.headword_buckets.get(word).copied().unwrap_or(0);
+                let escaped_word = escape_html(word);
+                let anchor = sanitize_anchor_id(&escaped_word);
+                let href = format!("{}#hw_{}", bucket_filename_ext(b, "xhtml"), anchor);
+                write!(out, "  <search-key-group href=\"{}\">\n", href)?;
+                write!(out, "    <match value=\"{}\"/>\n", escaped_word)?;
+                let entries = self.entries.get(word).map(|v| v.as_slice()).unwrap_or(&[]);
+                let variations = self.entry_variations(word, entries);
+                for v in &variations {
+                    write!(out, "    <match value=\"{}\"/>\n", escape_html(v))?;
+                }
+                out.write_all(b"  </search-key-group>\n")?;
+            }
+            out.write_all(b"</search-key-map>\n")?;
+            out.flush()?;
+        }
+
+        // nav.xhtml: minimal EPUB3 toc listing the content files.
+        {
+            let nav_items = buckets
+                .iter()
+                .map(|&b| {
+                    let label = self
+                        .file_labels
+                        .get(b as usize)
+                        .cloned()
+                        .unwrap_or_else(|| bucket_label(b).to_string());
+                    format!(
+                        "      <li><a href=\"{href}\">{label}</a></li>",
+                        href = bucket_filename_ext(b, "xhtml"),
+                        label = escape_html(&label)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let nav = format!(
+r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+<head>
+  <title>Contents</title>
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>Contents</h1>
+    <ol>
+{nav_items}
+    </ol>
+  </nav>
+</body>
+</html>
+"#,
+                nav_items = nav_items
+            );
+            let mut f = File::create(self.output_dir.join("nav.xhtml"))?;
+            f.write_all(nav.as_bytes())?;
+        }
+
+        // content3.opf: the EPUB3 package document.
+        {
+            let display_title = self
+                .params
+                .front_matter
+                .get("edition_name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| self.default_edition_name());
+
+            let manifest_items = buckets
+                .iter()
+                .map(|&b| {
+                    format!(
+                        "    <item id=\"{id}\" href=\"{href}\" media-type=\"application/xhtml+xml\"/>",
+                        id = bucket_id(b),
+                        href = bucket_filename_ext(b, "xhtml")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let spine_items = buckets
+                .iter()
+                .map(|&b| format!("    <itemref idref=\"{}\"/>", bucket_id(b)))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let opf = format!(
+r#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xml:lang="en">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="bookid">{uuid}</dc:identifier>
+    <dc:title>{title}</dc:title>
+    <dc:language>el</dc:language>
+    <dc:language>en</dc:language>
+    <dc:type>dictionary</dc:type>
+    <meta property="dcterms:modified">{modified}</meta>
+    <meta property="source-language">el</meta>
+    <meta property="target-language">en</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+{manifest_items}
+    <item id="skm" href="skm.xml" media-type="application/vnd.epub.search-key-map+xml" properties="search-key-map dictionary"/>
+  </manifest>
+  <spine>
+{spine_items}
+  </spine>
+</package>
+"#,
+                uuid = EPUB3_UUID,
+                title = escape_html(&display_title),
+                modified = EPUB3_MODIFIED,
+                manifest_items = manifest_items,
+                spine_items = spine_items,
+            );
+            let mut f = File::create(self.output_dir.join("content3.opf"))?;
+            f.write_all(opf.as_bytes())?;
+        }
+
+        println!(
+            "  Wrote {} content_NN.xhtml + skm.xml + nav.xhtml + content3.opf",
+            buckets.len()
+        );
+        Ok(())
+    }
 }
 
 // --- Free helpers ---
@@ -1077,6 +1372,18 @@ fn html_footer() -> &'static str {
     "    </mbp:frameset>\n  </body>\n</html>\n"
 }
 
+/// EPUB3 content-file header: a well-formed XHTML5 document with the XHTML and
+/// EPUB ops namespaces and `<body epub:type="dictionary">`. Unlike the idx
+/// `html_header`, this is strict XHTML so epubcheck's DICT profile accepts it.
+fn xhtml_content_header(title: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"el\" lang=\"el\">\n<head><title>{}</title></head>\n<body epub:type=\"dictionary\">\n",
+        escape_html(title)
+    )
+}
+
+const XHTML_CONTENT_FOOTER: &str = "</body>\n</html>\n";
+
 fn sanitize_anchor_id(text: &str) -> String {
     text.replace(' ', "_")
 }
@@ -1098,7 +1405,14 @@ fn bucket_for_headword(word: &str) -> u8 {
 }
 
 fn bucket_filename(bucket: u8) -> String {
-    format!("content_{:02}.html", bucket)
+    bucket_filename_ext(bucket, "html")
+}
+
+/// Like `bucket_filename` but with an explicit extension. The idx/MOBI path
+/// uses "html"; the EPUB3 path uses "xhtml". Keeping a single formatter
+/// guarantees the bucket numbering stays consistent across both outputs.
+fn bucket_filename_ext(bucket: u8, ext: &str) -> String {
+    format!("content_{:02}.{}", bucket, ext)
 }
 
 fn bucket_id(bucket: u8) -> String {

@@ -17,6 +17,7 @@ pub struct GeneratorOptions {
     pub limit_percent: Option<f64>,
     pub generate_mobi: bool,
     pub generate_stardict: bool,
+    pub generate_epub3: bool,
     pub max_inflections: Option<usize>,
     pub front_matter_path: Option<PathBuf>,
 }
@@ -83,6 +84,7 @@ pub fn run(opts: GeneratorOptions) -> Result<(), Box<dyn std::error::Error>> {
         limit_percent: opts.limit_percent,
         max_inflections: opts.max_inflections,
         front_matter,
+        generate_epub3: opts.generate_epub3,
     };
 
     let mut html_gen = HtmlGenerator::new(entries, params, Some(&dilemma));
@@ -91,13 +93,21 @@ pub fn run(opts: GeneratorOptions) -> Result<(), Box<dyn std::error::Error>> {
     let opf_filename = html_gen.opf_filename.clone();
     drop(html_gen);
 
-    // EPUB
+    // EPUB. With --epub3 we ship a proper EPUB3 dictionary (the format KDP's
+    // modern converter accepts); it REPLACES the legacy idx-HTML EPUB2 at the
+    // same filename. Without --epub3 we keep emitting the idx EPUB2 used by the
+    // historical path.
     let epub = EpubGenerator {
         output_dir: &output_dir,
         source_lang: &opts.source_lang,
         opf_filename: &opf_filename,
+        is_full_build: opts.limit_percent.is_none(),
     };
-    epub.generate()?;
+    if opts.generate_epub3 {
+        epub.generate_epub3()?;
+    } else {
+        epub.generate()?;
+    }
 
     // The MOBI build is the memory-heavy step (kindling holds the full
     // entry index in RAM); StarDict is much lighter, so the order here
@@ -112,6 +122,7 @@ pub fn run(opts: GeneratorOptions) -> Result<(), Box<dyn std::error::Error>> {
             output_dir: &output_dir,
             source_lang: &opts.source_lang,
             opf_filename: &opf_filename,
+            is_full_build: opts.limit_percent.is_none(),
         };
         mobi.generate();
     }

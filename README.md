@@ -103,6 +103,9 @@ cargo run --release -- -m
 # Also generate a StarDict bundle for GoldenDict / KOReader / sdcv
 cargo run --release -- --stardict
 
+# Emit the .epub as a valid EPUB3 dictionary (the format KDP accepts)
+cargo run --release -- --epub3
+
 # Generate every output (EPUB + MOBI + StarDict)
 cargo run --release -- -m --stardict
 
@@ -115,6 +118,7 @@ cargo run --release -- -l 10
 - `-l, --limit PERCENT`: Limit to first X% of words (useful for testing)
 - `-m, --mobi`: Also generate `.mobi` via Kindling (for sideloading)
 - `--stardict`: Also generate a StarDict bundle (`<output>/lemma_greek_en_stardict_v<version>/` plus a matching `dist/lemma_greek_en_stardict_v<version>.zip`) for GoldenDict, GoldenDict-ng, KOReader, sdcv, and other non-Kindle readers. The version suffix forces GoldenDict-ng's path-keyed metadata cache to invalidate on each release. Full builds (without `--limit`) refuse to write a bundle below 1000 headwords as a safeguard against shipping a partial test build by accident.
+- `--epub3`: Emit `lemma_greek_en.epub` as a valid [EPUB 3.3](https://www.w3.org/TR/epub-33/) dictionary, using the [EPUB Dictionaries and Glossaries](https://www.w3.org/TR/epub-dictionaries/) profile (`content_NN.xhtml` content documents plus a single Search Key Map, `dc:type=dictionary`, source/target-language metadata; validated clean by `epubcheck` under its DICT profile), instead of the legacy idx-HTML EPUB 2.0.1 markup. This is the format KDP's current converter accepts. The MOBI/idx path is unaffected: the searchable inflected-form set in the Search Key Map is exactly the set the idx path emits, and the `.html` content files and OPF the MOBI build reads are untouched.
 - `-i, --inflections N`: Max inflections per headword (default: 255)
 - `--front-matter PATH`: Override the copyright/usage front-matter fields (edition name, tagline, features, copyright holder, extra copyright lines, data sources) from a JSON file. Unspecified fields fall through to the built-in defaults.
 - `-h, --help`: Show help message
@@ -219,9 +223,9 @@ The following are filtered out as they cannot be selected in Kindle texts:
 
 ## Dictionary Layout
 
-Dictionary content is split across per-letter `content_NN.html` files (`content_01.html` … `content_24.html` for Α…Ω, plus `content_00.html` for non-Greek headwords). Each file is a standalone XHTML document with the Kindle dictionary `<idx:*>` markup. Cross-reference links are file-qualified (`content_11.html#hw_λέγω`). The NCX also exposes a jump-to-letter TOC.
+Dictionary content is split across `content_NN.html` files: `content_00.html` holds non-Greek headwords, and the Greek letters Α…Ω follow in order. Each file is a standalone XHTML document with the Kindle dictionary `<idx:*>` markup. Any letter with more than ~2,500 entries is spread across several consecutive files so no single file is oversized; Α alone (the privative α-/αν- plus the ανα-/απο-/αντι- prefixes give it ~4.5x the headwords of any other letter) becomes about five files, so file numbering is sequential rather than one number per letter. Cross-reference links are file-qualified (e.g. `content_15.html#hw_λέγω`), so a headword in one file links into whichever file holds its target. The NCX exposes a one-entry-per-letter jump-to-letter TOC.
 
-Per-letter splitting is required by [Kindle Publishing Guidelines §15.5](https://kindlegen.s3.amazonaws.com/AmazonKindlePublishingGuidelines.pdf) - Amazon's server-side dictionary converter can time out on a single very large XHTML file. Kindling reads every spine entry and produces a single MOBI, so the MOBI output is still one file per edition.
+Splitting is required by [Kindle Publishing Guidelines §15.5](https://kindlegen.s3.amazonaws.com/AmazonKindlePublishingGuidelines.pdf) - Amazon's server-side dictionary converter can time out on a single very large XHTML file (before this, Α was one ~19 MB file). The per-file cap lives in `src/html_gen.rs` as `MAX_ENTRIES_PER_FILE`; lower it if the converter still struggles. Kindling reads every spine entry and produces a single MOBI, so the MOBI output is still one file per edition.
 
 ## Git Hooks
 

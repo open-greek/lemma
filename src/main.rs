@@ -31,6 +31,12 @@ struct Cli {
     #[arg(long = "stardict", default_value_t = false)]
     stardict: bool,
 
+    /// Emit the .epub as a valid EPUB3 dictionary (content_NN.xhtml +
+    /// Search Key Map) instead of the legacy idx-HTML EPUB2. This is the
+    /// format KDP's modern converter accepts. The MOBI/idx path is unaffected.
+    #[arg(long = "epub3", default_value_t = false)]
+    epub3: bool,
+
     /// Path to a JSON file that overrides front-matter fields.
     #[arg(long = "front-matter", value_name = "PATH")]
     front_matter: Option<PathBuf>,
@@ -56,6 +62,7 @@ fn main() {
         limit_percent: cli.limit,
         generate_mobi: cli.mobi,
         generate_stardict: cli.stardict,
+        generate_epub3: cli.epub3,
         max_inflections: cli.inflections,
         front_matter_path: cli.front_matter,
     };

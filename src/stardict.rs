@@ -97,6 +97,10 @@ impl<'a> StarDictGenerator<'a> {
     /// extracted-zip layout, and the size delta is negligible against
     /// `.dict` which is already mostly incompressible HTML.
     fn archive_to_dist(&self, bundle_dir: &Path, stem: &str) {
+        if !self.is_full_build {
+            println!("Skipping dist/ archive (--limit test build)");
+            return;
+        }
         let dist_dir = PathBuf::from("dist");
         if let Err(e) = fs::create_dir_all(&dist_dir) {
             println!("Warning: could not create dist/: {}", e);

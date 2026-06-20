@@ -7,6 +7,9 @@ pub struct MobiGenerator<'a> {
     pub output_dir: &'a Path,
     pub source_lang: &'a str,
     pub opf_filename: &'a str,
+    /// False for `--limit` test builds, which share the same dist filename as
+    /// the full build and would otherwise overwrite the release artifact.
+    pub is_full_build: bool,
 }
 
 impl<'a> MobiGenerator<'a> {
@@ -64,6 +67,10 @@ impl<'a> MobiGenerator<'a> {
     }
 
     fn copy_to_dist(&self, mobi_path: &Path) {
+        if !self.is_full_build {
+            println!("Skipping dist/ copy (--limit test build)");
+            return;
+        }
         let dist_dir = PathBuf::from("dist");
         if fs::create_dir_all(&dist_dir).is_err() { return; }
         let Some(fname) = mobi_path.file_name() else { return; };
