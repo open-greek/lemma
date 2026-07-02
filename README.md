@@ -59,7 +59,7 @@ Inflection lookup, headword search, and cross-entry links (rewritten to StarDict
 ## Features
 - **Inflection Support**: Automatically links inflected forms to their lemmas, with 2.74M form-to-lemma mappings from [Dilemma](https://github.com/open-greek/dilemma) when available
 - **Lemma Equivalences**: Bridges cases where Wiktionary and Dilemma use different canonical forms for the same word (e.g., `τρώω`/`τρώγω`, `λέω`/`λέγω`), recovering ~742K additional inflections via 6,281 auto-generated equivalence pairs
-- **Pre-Ranked Inflections**: When [Dilemma](https://github.com/open-greek/dilemma)'s `mg_ranked_forms.json` is available (from [HuggingFace Hub](https://huggingface.co/datasets/ciscoriordan/dilemma-data) or locally), inflections arrive pre-ranked by corpus frequency and case-deduplicated. Case variants (φας/Φας) are added after the inflection cap, not before, so each slot goes to a unique form. Falls back to local ranking via [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018) if ranked forms aren't available
+- **Pre-Ranked Inflections**: When [Dilemma](https://github.com/open-greek/dilemma)'s `mg_ranked_forms.json` is available (from [HuggingFace Hub](https://huggingface.co/datasets/open-greek/dilemma-data) or locally), inflections arrive pre-ranked by corpus frequency and case-deduplicated. Case variants (φας/Φας) are added after the inflection cap, not before, so each slot goes to a unique form. Falls back to local ranking via [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018) if ranked forms aren't available
 - **Polytonic Support**: Corpus-attested polytonic forms from Greek Wikisource, enabling lookups in pre-1982 polytonic texts
 - **Gender and Variants**: POS line shows gender and key forms (e.g., "noun, feminine (plural θάλασσες)")
 - **Etymology**: Word origins with transliterations stripped for clean display
@@ -131,7 +131,7 @@ The dictionaries are built from:
 
 - **Primary Source**: [Kaikki.org](https://kaikki.org/) - Machine-readable Wiktionary data (definitions, POS, etymology)
 - **Inflection Data** (optional): [Dilemma](https://github.com/open-greek/dilemma) - Greek lemmatizer with 2.74M Modern Greek form-to-lemma mappings compiled from English and Greek Wiktionary, treebank corpora, and LSJ expansion
-- **Ranked Inflections** (optional): Dilemma's `mg_ranked_forms.json` from the [`ciscoriordan/dilemma-data`](https://huggingface.co/datasets/ciscoriordan/dilemma-data) HuggingFace dataset provides pre-ranked, case-deduplicated inflection lists per lemma. Downloaded automatically if `huggingface_hub` is installed.
+- **Ranked Inflections** (optional): Dilemma's `mg_ranked_forms.json` from the [`open-greek/dilemma-data`](https://huggingface.co/datasets/open-greek/dilemma-data) HuggingFace dataset provides pre-ranked, case-deduplicated inflection lists per lemma. Downloaded automatically if `huggingface_hub` is installed.
 - **Frequency Data** (fallback): [FrequencyWords](https://github.com/hermitdave/FrequencyWords) - Word frequency lists derived from OpenSubtitles 2018 corpus, used to rank inflections when pre-ranked forms are not available
 - **Fallback Data**: Pre-downloaded JSONL files in the repository
 
@@ -157,7 +157,7 @@ The downloader records the real Kaikki extraction date (the date Wiktionary was 
 
 On a successful download the downloader writes a tiny `greek_data_<lang>.jsonl.meta` sidecar next to the dump containing `{"extraction_date": ..., "source_url": ..., "downloaded_at": ...}`. Subsequent builds that reuse the cached dump read the sidecar so the extraction date survives across runs. Sidecars are gitignored.
 
-The generator also automatically looks for `mg_ranked_forms.json` (pre-ranked inflections) in three locations: `data/` in this project, the `DILEMMA_DATA_DIR`, or the [`ciscoriordan/dilemma-data`](https://huggingface.co/datasets/ciscoriordan/dilemma-data) HuggingFace dataset (requires `pip install huggingface_hub`).
+The generator also automatically looks for `mg_ranked_forms.json` (pre-ranked inflections) in three locations: `data/` in this project, the `DILEMMA_DATA_DIR`, or the [`open-greek/dilemma-data`](https://huggingface.co/datasets/open-greek/dilemma-data) HuggingFace dataset (requires `pip install huggingface_hub`).
 
 #### Lemma Equivalences
 
