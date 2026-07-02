@@ -14,14 +14,14 @@ pub fn default_front_matter() -> Value {
         "cover_path": Value::Null,
         "tagline": "A Greek-English dictionary built from English Wiktionary with gender, variant forms, etymology, usage examples, cross-reference links, and polytonic lookup support. Inflected forms automatically redirect to their headword.",
         "copyright": {
-            "holder": "Francisco Riordan",
+            "holder": "Open Greek",
             "extra_lines": [],
         },
         "tools": [
             {
                 "role": "Dictionary compiled by",
                 "name": "Lemma",
-                "url": "https://github.com/ciscoriordan/lemma",
+                "url": "https://github.com/open-greek/lemma",
                 "suffix": ".",
             },
             {
@@ -39,8 +39,8 @@ pub fn default_front_matter() -> Value {
             },
             {
                 "name": "Dilemma",
-                "url": "https://github.com/ciscoriordan/dilemma",
-                "desc": "Greek lemmatizer by Francisco Riordan (inflection data)."
+                "url": "https://github.com/open-greek/dilemma",
+                "desc": "Greek lemmatizer from the Open Greek project (inflection data)."
             },
             {
                 "name": "FrequencyWords",

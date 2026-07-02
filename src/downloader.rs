@@ -32,8 +32,8 @@ const LOCAL_FALLBACK_EL: &str = "greek_data_el.jsonl";
 const LOCAL_FALLBACK_EXTRACTION_DATE_EN: &str = "2025-07-16";
 const LOCAL_FALLBACK_EXTRACTION_DATE_EL: &str = "2025-07-17";
 
-const GITHUB_EN: &str = "https://raw.githubusercontent.com/ciscoriordan/lemma/main/greek_data_en.jsonl";
-const GITHUB_EL: &str = "https://raw.githubusercontent.com/ciscoriordan/lemma/main/greek_data_el.jsonl";
+const GITHUB_EN: &str = "https://raw.githubusercontent.com/open-greek/lemma/main/greek_data_en.jsonl";
+const GITHUB_EL: &str = "https://raw.githubusercontent.com/open-greek/lemma/main/greek_data_el.jsonl";
 
 impl Downloader {
     pub fn new(source_lang: &str) -> Self {

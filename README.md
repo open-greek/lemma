@@ -20,7 +20,7 @@ Lemma ships as a single unified edition with every feature the generator support
 2. **Open the Kindle drive** on your computer
 3. **Navigate to the `documents/dictionaries` folder** on your Kindle
    - If the `dictionaries` folder doesn't exist, create it inside `documents`
-4. **Download `lemma_greek_en.mobi`** from [GitHub Releases](https://github.com/ciscoriordan/lemma/releases) and copy it to `documents/dictionaries`
+4. **Download `lemma_greek_en.mobi`** from [GitHub Releases](https://github.com/open-greek/lemma/releases) and copy it to `documents/dictionaries`
    - Alternatively, you can build the `.mobi` locally by running with the `-m` flag (see below)
 5. **Safely eject your Kindle** from your computer
 6. **Restart your Kindle**:
@@ -36,7 +36,7 @@ On your Kindle, go to **Settings → Language & Dictionaries → Dictionaries �
 
 ## Pre-built Dictionary
 
-Ready-to-use dictionary files are available on the [Releases page](https://github.com/ciscoriordan/lemma/releases):
+Ready-to-use dictionary files are available on the [Releases page](https://github.com/open-greek/lemma/releases):
 
 - `lemma_greek_en.mobi` - the full dictionary for sideloading to Kindle devices
 - `lemma_greek_en.epub` - the source EPUB (most users want the MOBI)
@@ -57,9 +57,9 @@ If you previously installed an older version, remove the old `lemma_greek_en_sta
 Inflection lookup, headword search, and cross-entry links (rewritten to StarDict's `bword://` scheme) all work out of the box.
 
 ## Features
-- **Inflection Support**: Automatically links inflected forms to their lemmas, with 2.74M form-to-lemma mappings from [Dilemma](https://github.com/ciscoriordan/dilemma) when available
+- **Inflection Support**: Automatically links inflected forms to their lemmas, with 2.74M form-to-lemma mappings from [Dilemma](https://github.com/open-greek/dilemma) when available
 - **Lemma Equivalences**: Bridges cases where Wiktionary and Dilemma use different canonical forms for the same word (e.g., `τρώω`/`τρώγω`, `λέω`/`λέγω`), recovering ~742K additional inflections via 6,281 auto-generated equivalence pairs
-- **Pre-Ranked Inflections**: When [Dilemma](https://github.com/ciscoriordan/dilemma)'s `mg_ranked_forms.json` is available (from [HuggingFace Hub](https://huggingface.co/datasets/ciscoriordan/dilemma-data) or locally), inflections arrive pre-ranked by corpus frequency and case-deduplicated. Case variants (φας/Φας) are added after the inflection cap, not before, so each slot goes to a unique form. Falls back to local ranking via [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018) if ranked forms aren't available
+- **Pre-Ranked Inflections**: When [Dilemma](https://github.com/open-greek/dilemma)'s `mg_ranked_forms.json` is available (from [HuggingFace Hub](https://huggingface.co/datasets/ciscoriordan/dilemma-data) or locally), inflections arrive pre-ranked by corpus frequency and case-deduplicated. Case variants (φας/Φας) are added after the inflection cap, not before, so each slot goes to a unique form. Falls back to local ranking via [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018) if ranked forms aren't available
 - **Polytonic Support**: Corpus-attested polytonic forms from Greek Wikisource, enabling lookups in pre-1982 polytonic texts
 - **Gender and Variants**: POS line shows gender and key forms (e.g., "noun, feminine (plural θάλασσες)")
 - **Etymology**: Word origins with transliterations stripped for clean display
@@ -79,7 +79,7 @@ Inflection lookup, headword search, and cross-entry links (rewritten to StarDict
 ### Installation
 
 ```bash
-git clone https://github.com/ciscoriordan/lemma.git
+git clone https://github.com/open-greek/lemma.git
 cd lemma
 
 # Release build (kindling-mobi is fetched from crates.io automatically)
@@ -130,7 +130,7 @@ Cross-references, etymology, usage examples, and polytonic lookups are always en
 The dictionaries are built from:
 
 - **Primary Source**: [Kaikki.org](https://kaikki.org/) - Machine-readable Wiktionary data (definitions, POS, etymology)
-- **Inflection Data** (optional): [Dilemma](https://github.com/ciscoriordan/dilemma) - Greek lemmatizer with 2.74M Modern Greek form-to-lemma mappings compiled from English and Greek Wiktionary, treebank corpora, and LSJ expansion
+- **Inflection Data** (optional): [Dilemma](https://github.com/open-greek/dilemma) - Greek lemmatizer with 2.74M Modern Greek form-to-lemma mappings compiled from English and Greek Wiktionary, treebank corpora, and LSJ expansion
 - **Ranked Inflections** (optional): Dilemma's `mg_ranked_forms.json` from the [`ciscoriordan/dilemma-data`](https://huggingface.co/datasets/ciscoriordan/dilemma-data) HuggingFace dataset provides pre-ranked, case-deduplicated inflection lists per lemma. Downloaded automatically if `huggingface_hub` is installed.
 - **Frequency Data** (fallback): [FrequencyWords](https://github.com/hermitdave/FrequencyWords) - Word frequency lists derived from OpenSubtitles 2018 corpus, used to rank inflections when pre-ranked forms are not available
 - **Fallback Data**: Pre-downloaded JSONL files in the repository
@@ -172,7 +172,7 @@ This cross-references the two data sources, uses corpus frequency as a tiebreake
 ### Related Projects
 
 - [Kindling](https://github.com/ciscoriordan/kindling) - MOBI generator for Kindle dictionaries, books, and comics.
-- [Dilemma](https://github.com/ciscoriordan/dilemma) - Greek lemmatizer (provides the inflection lookup tables used by Lemma) plus a POS tagger and dependency parser via `dilemma[tagger]`.
+- [Dilemma](https://github.com/open-greek/dilemma) - Greek lemmatizer (provides the inflection lookup tables used by Lemma) plus a POS tagger and dependency parser via `dilemma[tagger]`.
 
 ## Dictionary Content
 
@@ -248,7 +248,7 @@ Behavior:
 
 ## License
 
-MIT - © 2026 Francisco Riordan
+MIT - © 2025-2026 Open Greek
 
 - **Dictionary content and data**: [Creative Commons Attribution-ShareAlike 4.0](https://creativecommons.org/licenses/by-sa/4.0/) (derived from Wiktionary)
 - **Frequency data** (`data/el_full.txt`): [MIT License](https://github.com/hermitdave/FrequencyWords/blob/master/LICENSE) (from FrequencyWords/OpenSubtitles)
@@ -257,6 +257,6 @@ MIT - © 2026 Francisco Riordan
 
 - Wiktionary contributors for the source data
 - [Kaikki.org](https://kaikki.org/) for providing machine-readable Wiktionary dumps
-- [Dilemma](https://github.com/ciscoriordan/dilemma) for Greek lemmatization and inflection data
+- [Dilemma](https://github.com/open-greek/dilemma) for Greek lemmatization and inflection data
 - [Kindling](https://github.com/ciscoriordan/kindling) for MOBI generation
 - [FrequencyWords](https://github.com/hermitdave/FrequencyWords) for corpus frequency data (MIT license)

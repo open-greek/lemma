@@ -849,7 +849,7 @@ impl<'a> HtmlGenerator<'a> {
         let fm = &self.params.front_matter;
         let year = Local::now().year();
 
-        let holder = fm.pointer("/copyright/holder").and_then(|v| v.as_str()).unwrap_or("Francisco Riordan");
+        let holder = fm.pointer("/copyright/holder").and_then(|v| v.as_str()).unwrap_or("Open Greek");
         let empty_vec: Vec<Value> = Vec::new();
         let extra_lines = fm.pointer("/copyright/extra_lines").and_then(|v| v.as_array()).unwrap_or(&empty_vec);
         let tools = fm.get("tools").and_then(|v| v.as_array()).unwrap_or(&empty_vec);
@@ -1024,7 +1024,7 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
 <package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
     <dc:title>{title}</dc:title>
-    <dc:creator opf:role="aut">Francisco Riordan</dc:creator>
+    <dc:creator opf:role="aut">Open Greek</dc:creator>
     <dc:language>el</dc:language>
     <dc:publisher>Lemma</dc:publisher>
     <dc:rights>Creative Commons Attribution-ShareAlike 4.0 International</dc:rights>

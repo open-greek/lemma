@@ -13,7 +13,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-const LEMMA_REPO_URL: &str = "https://github.com/ciscoriordan/lemma";
+const LEMMA_REPO_URL: &str = "https://github.com/open-greek/lemma";
 const LEMMA_CONTACT_EMAIL: &str = "cisco.riordan@gmail.com";
 
 /// Minimum headword count for a build that did not pass `--limit`. Prevents
