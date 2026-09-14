@@ -173,6 +173,7 @@ This cross-references the two data sources, uses corpus frequency as a tiebreake
 
 - [Kindling](https://github.com/ciscoriordan/kindling) - MOBI generator for Kindle dictionaries, books, and comics.
 - [Dilemma](https://github.com/open-greek/dilemma) - Greek lemmatizer (provides the inflection lookup tables used by Lemma) plus a POS tagger and dependency parser via `dilemma[tagger]`.
+- [Greenfield New Testament Greek-English Lexicon](https://github.com/open-greek/greenfield-nt-lexicon) - Public-domain 1896 lexicon with EPUB, Kindle, and StarDict editions.
 
 ## Dictionary Content
 
