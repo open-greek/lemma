@@ -24,11 +24,11 @@ use lemma::mobi_validator::{dedupe_to_newest_per_family, family_key, validate_mo
 
 // A minimal record 0 is 280 bytes (the validator requires
 // `rec0_offset + 280 <= len(data)`). We size it to fit a small EXTH section
-// after the MOBI header, with two EXTH records (531, 532), each carrying a
-// 4-byte payload.
+// after the MOBI header, with the four EXTH records required by the validator.
 const REC0_SIZE: usize = 512;
 const MOBI_HEADER_LENGTH: u32 = 232; // header_length written at rec0[20:24]
 const EXTH_OFFSET_IN_REC0: usize = 16 + MOBI_HEADER_LENGTH as usize; // = 248
+const CONTENT_ID: &[u8] = b"bc7a0762-d59c-46e0-95d6-51e3cde6e418";
 
 // JPEG SOI + APP0 marker - the exact bytes the old check misidentified.
 const JPEG_MAGIC: [u8; 4] = [0xff, 0xd8, 0xff, 0xe0];
@@ -44,8 +44,11 @@ fn write_u32_be(buf: &mut [u8], offset: usize, value: u32) {
     buf[offset..offset + 4].copy_from_slice(&bytes);
 }
 
-/// Build a minimal but valid MOBI record 0.
-fn build_record0(first_non_book: u32) -> Vec<u8> {
+fn build_record0_with_identity(
+    first_non_book: u32,
+    id_113: Option<&[u8]>,
+    id_504: Option<&[u8]>,
+) -> Vec<u8> {
     let mut rec0 = vec![0u8; REC0_SIZE];
 
     // PalmDOC header: compression=1 (no compression). Rest zero.
@@ -67,20 +70,24 @@ fn build_record0(first_non_book: u32) -> Vec<u8> {
     // EXTH header at 16 + header_length
     let off = EXTH_OFFSET_IN_REC0;
     rec0[off..off + 4].copy_from_slice(b"EXTH");
-    write_u32_be(&mut rec0, off + 4, 0); // header length (unused by validator)
-    write_u32_be(&mut rec0, off + 8, 2); // count: two records
+    let mut records: Vec<(u32, &[u8])> = vec![(531, b"grc"), (532, b"en")];
+    if let Some(value) = id_113 {
+        records.push((113, value));
+    }
+    if let Some(value) = id_504 {
+        records.push((504, value));
+    }
+    write_u32_be(&mut rec0, off + 8, records.len() as u32);
 
-    // EXTH record 531 (DictionaryInLanguage)
     let mut entry_pos = off + 12;
-    write_u32_be(&mut rec0, entry_pos, 531);
-    write_u32_be(&mut rec0, entry_pos + 4, 12); // rec_len includes header
-    rec0[entry_pos + 8..entry_pos + 12].copy_from_slice(b"grc\0");
-
-    // EXTH record 532 (DictionaryOutLanguage)
-    entry_pos += 12;
-    write_u32_be(&mut rec0, entry_pos, 532);
-    write_u32_be(&mut rec0, entry_pos + 4, 12);
-    rec0[entry_pos + 8..entry_pos + 12].copy_from_slice(b"en\0\0");
+    for (record_type, value) in records {
+        let record_len = 8 + value.len();
+        write_u32_be(&mut rec0, entry_pos, record_type);
+        write_u32_be(&mut rec0, entry_pos + 4, record_len as u32);
+        rec0[entry_pos + 8..entry_pos + record_len].copy_from_slice(value);
+        entry_pos += record_len;
+    }
+    write_u32_be(&mut rec0, off + 4, (entry_pos - off) as u32);
 
     rec0
 }
@@ -96,6 +103,24 @@ fn build_mobi(
     first_non_book: u32,
     post_text_record_magics: &[[u8; 4]],
 ) -> Vec<u8> {
+    build_mobi_with_identity(
+        palmdb_name,
+        num_total_records,
+        first_non_book,
+        post_text_record_magics,
+        Some(CONTENT_ID),
+        Some(CONTENT_ID),
+    )
+}
+
+fn build_mobi_with_identity(
+    palmdb_name: &str,
+    num_total_records: u32,
+    first_non_book: u32,
+    post_text_record_magics: &[[u8; 4]],
+    id_113: Option<&[u8]>,
+    id_504: Option<&[u8]>,
+) -> Vec<u8> {
     assert_eq!(
         post_text_record_magics.len(),
         (num_total_records - first_non_book) as usize
@@ -107,7 +132,7 @@ fn build_mobi(
     let mut record_data: Vec<Vec<u8>> = Vec::with_capacity(num_total_records as usize);
 
     // Record 0: MOBI header + PalmDOC header (REC0_SIZE bytes).
-    record_data.push(build_record0(first_non_book));
+    record_data.push(build_record0_with_identity(first_non_book, id_113, id_504));
 
     // Text records 1..first_non_book-1: 8-byte zero payloads.
     for _ in 1..first_non_book {
@@ -170,6 +195,25 @@ fn write_mobi(
         post_text_record_magics,
     );
     fs::write(&path, &bytes).unwrap();
+    path
+}
+
+fn write_mobi_with_identity(
+    tmpdir: &std::path::Path,
+    filename: &str,
+    id_113: Option<&[u8]>,
+    id_504: Option<&[u8]>,
+) -> PathBuf {
+    let path = tmpdir.join(filename);
+    let bytes = build_mobi_with_identity(
+        "Lemma_Greek_Dictionary",
+        3,
+        1,
+        &[JPEG_MAGIC, INDX_MAGIC],
+        id_113,
+        id_504,
+    );
+    fs::write(&path, bytes).unwrap();
     path
 }
 
@@ -339,6 +383,127 @@ fn indx_immediately_after_text_is_ok() {
 
     let report = validate_mobi_files(&[path]);
     assert!(report.ok(), "expected PASS, got: {}", format_failures(&report));
+}
+
+// ---------------- Vocabulary Builder identity tests ----------------
+
+#[test]
+fn matching_exth_113_and_504_are_ok() {
+    let tmp = tempdir();
+    let path = write_mobi_with_identity(
+        tmp.path(),
+        "lemma_greek_en.mobi",
+        Some(CONTENT_ID),
+        Some(CONTENT_ID),
+    );
+
+    let report = validate_mobi_files(&[path]);
+    assert!(report.ok(), "expected PASS, got: {}", format_failures(&report));
+}
+
+#[test]
+fn kindling_dictionary_output_passes_vocabulary_builder_identity_validation() {
+    let tmp = tempdir();
+    let html = r#"<html xmlns:idx="http://www.mobipocket.com/idx">
+<body><idx:entry><idx:orth value="λόγος">λόγος</idx:orth><b>λόγος</b> word</idx:entry></body>
+</html>"#;
+    let opf = r#"<?xml version="1.0" encoding="UTF-8"?>
+<package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Lemma Integration Dictionary</dc:title>
+    <dc:creator>Open Greek</dc:creator>
+    <dc:language>el</dc:language>
+    <dc:identifier id="BookId">LemmaGreekENEL</dc:identifier>
+    <x-metadata>
+      <DictionaryInLanguage>el</DictionaryInLanguage>
+      <DictionaryOutLanguage>en</DictionaryOutLanguage>
+      <DefaultLookupIndex>default</DefaultLookupIndex>
+    </x-metadata>
+  </metadata>
+  <manifest><item id="content" href="content.html" media-type="application/xhtml+xml"/></manifest>
+  <spine><itemref idref="content"/></spine>
+</package>"#;
+    let opf_path = tmp.path().join("content.opf");
+    let mobi_path = tmp.path().join("lemma_greek_en.mobi");
+    fs::write(tmp.path().join("content.html"), html).unwrap();
+    fs::write(&opf_path, opf).unwrap();
+
+    kindling::mobi::build_mobi(
+        &opf_path,
+        &mobi_path,
+        true,
+        false,
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+
+    let report = validate_mobi_files(&[mobi_path]);
+    assert!(report.ok(), "expected PASS, got: {}", format_failures(&report));
+}
+
+#[test]
+fn missing_exth_113_is_error() {
+    let tmp = tempdir();
+    let path = write_mobi_with_identity(
+        tmp.path(),
+        "lemma_greek_en.mobi",
+        None,
+        Some(CONTENT_ID),
+    );
+
+    let report = validate_mobi_files(&[path]);
+    assert!(!report.ok(), "expected FAIL, got pass");
+    assert!(report.files[0]
+        .errors
+        .iter()
+        .any(|error| error.contains("EXTH 113")));
+}
+
+#[test]
+fn missing_exth_504_is_error() {
+    let tmp = tempdir();
+    let path = write_mobi_with_identity(
+        tmp.path(),
+        "lemma_greek_en.mobi",
+        Some(CONTENT_ID),
+        None,
+    );
+
+    let report = validate_mobi_files(&[path]);
+    assert!(!report.ok(), "expected FAIL, got pass");
+    assert!(report.files[0]
+        .errors
+        .iter()
+        .any(|error| error.contains("EXTH 504")));
+}
+
+#[test]
+fn mismatched_exth_113_and_504_are_error() {
+    let tmp = tempdir();
+    let path = write_mobi_with_identity(
+        tmp.path(),
+        "lemma_greek_en.mobi",
+        Some(CONTENT_ID),
+        Some(b"3d9d7698-a961-46d0-ae55-cfdb688cf373"),
+    );
+
+    let report = validate_mobi_files(&[path]);
+    assert!(!report.ok(), "expected FAIL, got pass");
+    assert!(report.files[0]
+        .errors
+        .iter()
+        .any(|error| error.contains("do not match")));
 }
 
 // ---------------- dedupe sanity check ----------------

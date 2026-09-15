@@ -2,7 +2,8 @@
 //
 // Checks that each MOBI has the binary structure Kindle requires for a
 // dictionary: PalmDB header, MOBI header with dictionary type, EXTH records
-// with language metadata, and at least one INDX record after the text section.
+// with language metadata and matching content identifiers, and at least one
+// INDX record after the text section.
 //
 // Also handles PalmDB name uniqueness across distinct filename families,
 // where a "family" is a basename with its `_YYYYMMDD` date stamp stripped:
@@ -278,8 +279,7 @@ pub fn validate_one(path: &Path) -> FileValidation {
                             ));
                         } else {
                             let exth_count = read_u32_be(rec0, exth_offset + 8) as usize;
-                            let mut exth_types: std::collections::HashSet<u32> =
-                                std::collections::HashSet::new();
+                            let mut exth_records: HashMap<u32, Vec<u8>> = HashMap::new();
                             let mut pos = exth_offset + 12;
                             for _ in 0..exth_count {
                                 if pos + 8 > rec0.len() {
@@ -287,19 +287,43 @@ pub fn validate_one(path: &Path) -> FileValidation {
                                 }
                                 let rec_type = read_u32_be(rec0, pos);
                                 let rec_len = read_u32_be(rec0, pos + 4) as usize;
-                                exth_types.insert(rec_type);
-                                if rec_len == 0 {
+                                if rec_len < 8 || pos + rec_len > rec0.len() {
                                     break;
                                 }
+                                exth_records
+                                    .entry(rec_type)
+                                    .or_insert_with(|| rec0[pos + 8..pos + rec_len].to_vec());
                                 pos += rec_len;
                             }
 
-                            // 531 = DictionaryInLanguage, 532 = DictionaryOutLanguage
-                            if !exth_types.contains(&531) {
+                            // 531/532 select the dictionary by language. Matching,
+                            // nonempty 113/504 values give the sideloaded dictionary a
+                            // stable identity so Vocabulary Builder records its lookups.
+                            if !exth_records.contains_key(&531) {
                                 errors.push("EXTH 531 (DictionaryInLanguage) missing".to_string());
                             }
-                            if !exth_types.contains(&532) {
+                            if !exth_records.contains_key(&532) {
                                 errors.push("EXTH 532 (DictionaryOutLanguage) missing".to_string());
+                            }
+                            let id_113 = exth_records.get(&113).filter(|value| !value.is_empty());
+                            let id_504 = exth_records.get(&504).filter(|value| !value.is_empty());
+                            if id_113.is_none() {
+                                errors.push(
+                                    "EXTH 113 (dictionary content identifier) missing or empty"
+                                        .to_string(),
+                                );
+                            }
+                            if id_504.is_none() {
+                                errors.push(
+                                    "EXTH 504 (dictionary content key) missing or empty".to_string(),
+                                );
+                            }
+                            if matches!((id_113, id_504), (Some(left), Some(right)) if left != right)
+                            {
+                                errors.push(
+                                    "EXTH 113/504 dictionary content identifiers do not match"
+                                        .to_string(),
+                                );
                             }
                         }
                     }

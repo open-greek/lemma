@@ -44,6 +44,8 @@ impl<'a> MobiGenerator<'a> {
             false, // self_check
             false, // kindlegen_parity (comic-path only; ignored for dict builds)
             false, // strict_accents (off = fold diacritics at lookup, like kindlegen)
+            false, // fold_accents (default lookup behavior)
+            false, // force_user_fonts (book-only; ignored for dictionaries)
         );
 
         match result {
