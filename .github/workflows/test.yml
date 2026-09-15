@@ -14,17 +14,8 @@ jobs:
         with:
           path: lemma
 
-      - uses: actions/checkout@v4
-        with:
-          repository: ciscoriordan/kindling
-          path: kindling
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Wire local kindling
-        working-directory: lemma
-        run: KINDLING_PATH=$GITHUB_WORKSPACE/kindling ./scripts/setup-local-kindling.sh
 
       - name: Build release
         working-directory: lemma
